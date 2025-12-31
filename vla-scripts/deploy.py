@@ -27,28 +27,46 @@ Note that if your server is not accessible on the open web, you can use ngrok, o
     => `ssh -L 8000:localhost:8000 ssh USER@<SERVER_IP>`
 """
 
+# 用于路径判断（后面要判断 openvla_path 是不是本地目录）
 import os.path
 
+# 静态检查器 Ruff 的注释，忽略“导入顺序”的警告
 # ruff: noqa: E402
+
+# 引入 json_numpy 并立刻 patch()，让 numpy 数组能被 JSON 序列化/反序列化（FastAPI/requests 交互时很方便）
 import json_numpy
 
 json_numpy.patch()
+
 import json
 import logging
 import traceback
+
+# 后面用来定义 DeployConfig（命令行配置）
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
+# 把 dataclass 变成命令行参数解析器的库（类似 argparse + dataclass）
 import draccus
+
 import torch
+
+# ASGI 服务器，跑 FastAPI
 import uvicorn
+
+# Web 框架
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+
+# 把 numpy 图像转成 PIL 图片（便于喂给 processor）
 from PIL import Image
+
+# 加载 OpenVLA 的处理器与模型（通过 HF AutoClass）
 from transformers import AutoModelForVision2Seq, AutoProcessor
 
 # === Utilities ===
+# 给老版本（路径里包含 v01）模型用的系统提示词——一些 OpenVLA 的早期 checkpoint 需要这种对话风格前缀
 SYSTEM_PROMPT = (
     "A chat between a curious user and an artificial intelligence assistant. "
     "The assistant gives helpful, detailed, and polite answers to the user's questions."
@@ -56,13 +74,25 @@ SYSTEM_PROMPT = (
 
 
 def get_openvla_prompt(instruction: str, openvla_path: Union[str, Path]) -> str:
+    """
+    根据 OpenVLA 模型路径生成对应的提示词模板
+
+    参数:
+        instruction (str): 机器人需要执行的指令描述
+        openvla_path (Union[str, Path]): OpenVLA 模型的路径，用于判断模型版本
+
+    返回:
+        str: 格式化后的提示词字符串，包含系统提示和用户指令
+    """
+    # 根据模型路径中是否包含"v01"来区分不同版本的提示词格式
     if "v01" in openvla_path:
         return f"{SYSTEM_PROMPT} USER: What action should the robot take to {instruction.lower()}? ASSISTANT:"
     else:
+        # lower()：把自然语言指令统一小写（对语言模型一般没坏处）
         return f"In: What action should the robot take to {instruction.lower()}?\nOut:"
 
 
-# === Server Interface ===
+# NOTE === Server Interface ===
 class OpenVLAServer:
     def __init__(self, openvla_path: Union[str, Path], attn_implementation: Optional[str] = "flash_attention_2") -> Path:
         """

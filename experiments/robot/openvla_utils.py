@@ -31,16 +31,16 @@ OPENVLA_V01_SYSTEM_PROMPT = (
 
 def get_vla(cfg):
     """
-    加载并返回一个预训练的VLA模型实例。
+    加载并返回一个预训练的 VLA 模型实例。
 
     参数:
         cfg: 配置对象，包含以下属性：
             - pretrained_checkpoint (str): 预训练模型检查点路径。
-            - load_in_8bit (bool): 是否以8位量化方式加载模型。
-            - load_in_4bit (bool): 是否以4位量化方式加载模型。
+            - load_in_8bit (bool): 是否以 8 位量化方式加载模型。
+            - load_in_4bit (bool): 是否以 4 位量化方式加载模型。
 
     返回:
-        vla: 实例化的VLA模型，已根据配置进行加载和设备映射。
+        vla: 实例化的 VLA 模型，已根据配置进行加载和设备映射。
     """
     # 打印提示信息：正在实例化预训练 VLA 模型，并启用 BF16 与 Flash Attention
     print("[*] Instantiating Pretrained VLA model")
@@ -53,7 +53,7 @@ def get_vla(cfg):
     AutoProcessor.register(OpenVLAConfig, PrismaticProcessor)
     AutoModelForVision2Seq.register(OpenVLAConfig, OpenVLAForActionPrediction)
 
-    # 使用HF的from_pretrained方法加载模型，支持多种优化选项如 Flash Attention、BF16 精度等
+    # 使用 HF 的 from_pretrained() 方法加载模型，支持多种优化选项如 Flash Attention、BF16 精度等
     vla = AutoModelForVision2Seq.from_pretrained(
         cfg.pretrained_checkpoint,
         attn_implementation="flash_attention_2",
@@ -65,8 +65,7 @@ def get_vla(cfg):
     )
 
     # Move model to device.
-    # Note: `.to()` is not supported for 8-bit or 4-bit bitsandbytes models, but the model will
-    #       already be set to the right devices and casted to the correct dtype upon loading.
+    # Note: `.to()` is not supported for 8-bit or 4-bit bitsandbytes models, but the model will already be set to the right devices and casted to the correct dtype upon loading.
     # 将模型移动至指定计算设备（若未使用量化加载）
     # 注意：对于8位或4位模型，不能调用.to()方法，因为它们在加载时已被正确放置
     if not cfg.load_in_8bit and not cfg.load_in_4bit:
@@ -76,6 +75,7 @@ def get_vla(cfg):
     # 即: 加载数据集统计信息用于动作反归一化（通常来自微调阶段）
     dataset_statistics_path = os.path.join(
         cfg.pretrained_checkpoint, "dataset_statistics.json")
+    
     if os.path.isfile(dataset_statistics_path):
         with open(dataset_statistics_path, "r") as f:
             norm_stats = json.load(f)

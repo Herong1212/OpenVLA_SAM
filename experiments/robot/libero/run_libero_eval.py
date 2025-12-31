@@ -75,14 +75,23 @@ from experiments.robot.libero.libero_utils import (
 @dataclass
 class GenerateConfig:
     # fmt: off
+    
+    """
+    生成配置类，用于定义模型、环境和工具相关的配置参数
+    
+    该类包含三个主要部分的配置：
+    1. 模型特定参数：用于指定模型类型、预训练检查点等
+    2. LIBERO环境特定参数: 用于配置任务套件和仿真环境参数
+    3. 工具参数：用于配置日志记录和实验管理
+    """
 
     #################################################################################################################
     # Model-specific parameters
     #################################################################################################################
     model_family: str = "openvla"                    # Model family
     pretrained_checkpoint: Union[str, Path] = ""     # Pretrained checkpoint path，即：必填项，不能为空！
-    load_in_8bit: bool = False                       # (For OpenVLA only) Load with 8-bit quantization
-    load_in_4bit: bool = False                       # (For OpenVLA only) Load with 4-bit quantization，即：与上面的 load_in_8bit 不能同时设为 True（会冲突）
+    load_in_8bit: bool = False                       # (For OpenVLA only) Load with 8-bit quantization，即：(仅适用于OpenVLA) 是否使用8位量化加载
+    load_in_4bit: bool = False                       # (For OpenVLA only) Load with 4-bit quantization，即：(仅适用于OpenVLA) 是否使用4位量化加载，与上面的 load_in_8bit 不能同时设为 True（会冲突）
 
     center_crop: bool = True                         # Center crop? (if trained w/ random crop image aug) ，即：必须设置，因模型训练时使用了随机裁剪增强（90% 区域），测试时需对应使用中心 90% 裁剪
 
@@ -90,18 +99,18 @@ class GenerateConfig:
     # LIBERO environment-specific parameters
     #################################################################################################################
     task_suite_name: str = "libero_spatial"          # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
-    num_steps_wait: int = 10                         # Number of steps to wait for objects to stabilize in sim，即：仿真环境初始化后，等待物体稳定的步数
-    num_trials_per_task: int = 50                    # Number of rollouts per task，即：默认每个任务做 50次
+    num_steps_wait: int = 10                         # Number of steps to wait for objects to stabilize in sim，即：仿真环境初始化后，等待物体稳定的步数，“预热”
+    num_trials_per_task: int = 50                    # Number of rollouts per task，即：每个任务的运行次数，默认每个任务做 50 次
 
     #################################################################################################################
     # Utils
     #################################################################################################################
-    run_id_note: Optional[str] = None                # Extra note to add in run ID for logging，即：日志文件名的额外备注（方便区分不同试验）
+    run_id_note: Optional[str] = None                # Extra note to add in run ID for logging，即：运行ID中的额外备注，用于日志文件名区分不同实验
     local_log_dir: str = "./experiments/logs"        # Local directory for eval logs
 
-    use_wandb: bool = False                          # Whether to also log results in Weights & Biases，即：若需可视化日志，添加该参数并指定 --wandb_project 和 --wandb_entity
-    wandb_project: str = "YOUR_WANDB_PROJECT"        # Name of W&B project to log to (use default!)
-    wandb_entity: str = "YOUR_WANDB_ENTITY"          # Name of entity to log under
+    use_wandb: bool = False                          # Whether to also log results in Weights & Biases，即：是否在 Weights & Biases 中记录结果，若需可视化日志，添加该参数并指定 --wandb_project 和 --wandb_entity
+    wandb_project: str = "YOUR_WANDB_PROJECT"        # Name of W&B project to log to (use default!)，即：W&B 项目的名称
+    wandb_entity: str = "YOUR_WANDB_ENTITY"          # Name of entity to log under，即：W&B 实体的名称
 
     seed: int = 7                                    # Random Seed (for reproducibility)
 
@@ -113,9 +122,11 @@ class GenerateConfig:
 def eval_libero(cfg: GenerateConfig) -> None:
     # step1: 参数校验（避免配置错误）
     assert cfg.pretrained_checkpoint is not None, "cfg.pretrained_checkpoint must not be None!"
+    
     # 如果模型路径里包含 “image_aug”（说明模型训练时用了图像增强），就强制要求 center_crop=True，否则报错
     if "image_aug" in cfg.pretrained_checkpoint:
         assert cfg.center_crop, "Expecting `center_crop==True` because model was trained with image augmentations!"
+    
     # 检查不能同时启用 8 位和 4 位量化，否则报错
     assert not (cfg.load_in_8bit and cfg.load_in_4bit), "Cannot use both 8-bit and 4-bit quantization!"
 
@@ -154,6 +165,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
     # 如果额外指定了 run_id_note
     if cfg.run_id_note is not None:
         run_id += f"--{cfg.run_id_note}"
+
     os.makedirs(cfg.local_log_dir, exist_ok=True)
     local_log_filepath = os.path.join(cfg.local_log_dir, run_id + ".txt")
     log_file = open(local_log_filepath, "w")
@@ -235,7 +247,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
             print(f"Starting episode {task_episodes+1}...")
             log_file.write(f"Starting episode {task_episodes+1}...\n")
 
-            # 开始试验的动作循环：while 循环条件是 “当前步数 < 最大步数 + 等待步数”（等待步数是前面说的让物体稳定的步数）
+            # Note 动作执行循环：while 循环条件是 “当前步数 < 最大步数 + 等待步数”（等待步数是前面说的让物体稳定的步数）
             while t < max_steps + cfg.num_steps_wait:
                 try:
                     # Notice IMPORTANT: Do nothing for the first few timesteps because the simulator drops objects and we need to wait for them to fall
@@ -244,7 +256,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
                         t += 1
                         continue
 
-                    # Get preprocessed image --- 从环境观测中提取图像，缩放到模型要求的尺寸
+                    # Notice Get preprocessed image --- 获取当前相机图像，并 Resize
                     # ? obs 的结构是怎样的?
                     img = get_libero_image(obs, resize_size)
 
@@ -253,6 +265,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
 
                     # Note1: Prepare observations dict
                     # Notice: OpenVLA does not take proprio state as input
+                    # 构建 observation 字典，包含图像和机械臂状态（虽然 OpenVLA 主要只看图）
                     observation = {
                         "full_image": img,
                         "state": np.concatenate(
@@ -268,6 +281,9 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     }
 
                     # Note2: Query model to get action
+                    # 关键一步：模型推理 ！
+                    #   输入：模型 + 图像 + 任务描述文本
+                    #   输出：模型预测的动作（通常是 7 维：x, y, z, roll, pitch, yaw, gripper）
                     action = get_action(
                         cfg,
                         model,
@@ -277,15 +293,18 @@ def eval_libero(cfg: GenerateConfig) -> None:
                     )
 
                     # ps1 Normalize gripper action [0,1] -> [-1,+1] because the environment expects the latter
+                    # 确保夹爪数值在 [-1, 1] 之间
                     action = normalize_gripper_action(action, binarize=True)
 
                     # ps2 [OpenVLA] The dataloader flips the sign of the gripper action to align with other datasets (0 = close, 1 = open), so flip it back (-1 = open, +1 = close) before executing the action
                     if cfg.model_family == "openvla":
+                        # 重要反转：OpenVLA 训练数据的夹爪定义可能和 LIBERO 是反的（例如一个认为是 1 是开，另一个认为是 -1 是开）。这里做了一个符号反转，这是最容易踩坑的地方
                         action = invert_gripper_action(action)
 
                     # Execute action in environment
                     # 把动作数组转成列表，让环境执行（机器人真的动起来）
                     obs, reward, done, info = env.step(action.tolist())
+                    
                     # 如果任务完成（done=True），更新当前任务和全局的成功次数，跳出动作循环（该试验结束）
                     if done:
                         task_successes += 1
@@ -304,6 +323,7 @@ def eval_libero(cfg: GenerateConfig) -> None:
             total_episodes += 1
 
             # Save a replay video of the episode
+            # 把刚才的一系列图片存成视频（方便发 Paper 或 debug）
             save_rollout_video(
                 replay_images, total_episodes, success=done, task_description=task_description, log_file=log_file
             )

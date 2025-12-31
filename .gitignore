@@ -154,3 +154,9 @@ wandb/
 
 # checkpoint
 openvla/
+
+# datasets
+modified_libero_rlds/
+
+# saved videos
+rollouts/
