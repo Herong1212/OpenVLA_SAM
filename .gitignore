@@ -147,6 +147,7 @@ dmypy.json
 # Caches and Datasets
 cache/
 data/
+modified_libero_rlds/
 
 # Rollout videos and wandb logs
 rollouts/
@@ -154,12 +155,7 @@ wandb/
 
 # checkpoint
 openvla/
-
-# datasets
-modified_libero_rlds/
-
-# saved videos
-rollouts/
+runs/
 
 # temporary files
 adapter-tmp/
