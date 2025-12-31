@@ -160,3 +160,6 @@ modified_libero_rlds/
 
 # saved videos
 rollouts/
+
+# temporary files
+adapter-tmp/

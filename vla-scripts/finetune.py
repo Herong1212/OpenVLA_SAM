@@ -27,6 +27,7 @@ Run with:
 """
 
 import os
+from datetime import datetime
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -135,11 +136,11 @@ class FinetuneConfig:
     lora_rank: int = 32                                             # Rank of LoRA weight matrix，即：秩（Rank）———— LoRA 矩阵的维度，越大参数越多，拟合能力越强但显存占用越高。决定了微调参数量。32 是平衡点，太小拟合不够，太大显存不够。
     lora_dropout: float = 0.0                                       # Dropout applied to LoRA weights，即：Dropout 率 ———— 防止过拟合的随机失活比例。0.0 表示不使用。
 
-    use_quantization: bool = False                                  # Whether to 4-bit quantize VLA for LoRA fine-tuning，即：量化开关 ———— 是否使用 4-bit 量化加载底座模型（即 QLoRA），极大节省显存
+    use_quantization: bool = True                                   # Whether to 4-bit quantize VLA for LoRA fine-tuning，即：量化开关 ———— 是否使用 4-bit 量化加载底座模型（即 QLoRA），极大节省显存
                                                                     #  ps：=> CAUTION: Reduces memory but hurts performance ——> 会降低一些性能
 
     # Tracking Parameters
-    wandb_project: str = "openvla-debug"                                  # Name of W&B project to log to (use default!)
+    wandb_project: str = "openvla-debug"                            # Name of W&B project to log to (use default!)
     wandb_entity: str = "stanford-voltron"                          # Name of entity to log under
     run_id_note: Optional[str] = None                               # Extra note for logging, Weights & Biases
 
@@ -177,6 +178,9 @@ def finetune(cfg: FinetuneConfig) -> None:
         exp_id += f"--{cfg.run_id_note}"
     if cfg.image_aug:
         exp_id += "--image_aug"
+
+    timestamp = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
+    exp_id += f"--{timestamp}"
 
     # Start =>> Build Directories
     run_dir, adapter_dir = cfg.run_root_dir / exp_id, cfg.adapter_tmp_dir / exp_id
@@ -225,6 +229,10 @@ def finetune(cfg: FinetuneConfig) -> None:
         #   2. 将 LayerNorm 层强制转回 float32（保证稳定性）。
         #   3. 开启 gradient checkpointing（以计算换显存）。
         vla = prepare_model_for_kbit_training(vla)
+        # 【新增这行】强制使用 use_reentrant=False 来解决 DDP 报错
+        vla.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False})
+
     else:
         # 若未开启量化，则直接移入 GPU
         vla = vla.to(device_id)
